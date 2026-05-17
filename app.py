@@ -7,6 +7,7 @@ Layout:
   - Below: download buttons for narrative.docx and sources.json
 """
 
+import html
 import io
 import json
 import os
@@ -21,6 +22,134 @@ from template import NARRATIVE_TEMPLATE
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_ADAE = os.path.join(HERE, "data", "ADAE.xlsx")
 DEFAULT_PROTOCOL = os.path.join(HERE, "data", "mock_protocol.pdf")
+
+# Pastel accents per template section — used for narrative left borders and
+# matching source cards so prose and citation stay visually linked.
+SECTION_ACCENTS = {
+    "patient_info":      {"bar": "#A8C5E0", "bg": "#EFF6FB"},  # powder blue
+    "event_description": {"bar": "#C8A8D8", "bg": "#F4ECF7"},  # dusty lavender
+    "treatment_outcome": {"bar": "#9FBFA0", "bg": "#ECF4ED"},  # sage
+    "conmeds":           {"bar": "#E8B5A0", "bg": "#FBF0EA"},  # soft peach
+}
+DEFAULT_ACCENT = {"bar": "#C9C0DA", "bg": "#F1EDF7"}
+
+CUSTOM_CSS = """
+<style>
+/* Page header */
+.psn-header {
+    background: linear-gradient(135deg, #EDE7F6 0%, #FBF0EA 100%);
+    padding: 1.4rem 1.6rem;
+    border-radius: 14px;
+    border: 1px solid #E0D9EE;
+    margin-bottom: 1.2rem;
+}
+.psn-header h1 {
+    margin: 0;
+    color: #3D3D5C;
+    font-size: 1.7rem;
+    letter-spacing: -0.01em;
+}
+.psn-header p {
+    margin: 0.35rem 0 0 0;
+    color: #6B6B85;
+    font-size: 0.95rem;
+}
+
+/* Input section labels */
+.psn-input-label {
+    font-weight: 600;
+    color: #5C5478;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.4rem;
+}
+
+/* Narrative section card */
+.psn-section {
+    background: var(--psn-bg);
+    border-left: 4px solid var(--psn-bar);
+    padding: 1rem 1.2rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+.psn-section h3 {
+    margin: 0 0 0.5rem 0;
+    color: #3D3D5C;
+    font-size: 1.1rem;
+}
+.psn-section p {
+    margin: 0;
+    color: #2D3748;
+    line-height: 1.6;
+}
+
+/* Source card */
+.psn-source {
+    background: #FFFFFF;
+    border: 1px solid #E5DFEF;
+    border-left: 4px solid var(--psn-bar);
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+}
+.psn-source .psn-source-title {
+    font-weight: 600;
+    color: #3D3D5C;
+    margin-bottom: 0.4rem;
+    font-size: 0.95rem;
+}
+.psn-source ul {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: #54546B;
+}
+.psn-source li {
+    margin-bottom: 0.15rem;
+}
+.psn-source .psn-source-empty {
+    color: #9090A8;
+    font-style: italic;
+}
+
+/* Section divider for results header */
+.psn-results-bar {
+    background: #F4EFFB;
+    padding: 0.7rem 1rem;
+    border-radius: 8px;
+    border-left: 4px solid #9C89B8;
+    color: #3D3D5C;
+    font-weight: 600;
+    margin: 1rem 0;
+}
+
+/* Tighten the default primary button */
+div.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #9C89B8 0%, #B19CD9 100%);
+    border: none;
+    color: white;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border-radius: 8px;
+    padding: 0.55rem 1rem;
+    transition: transform 0.05s ease, box-shadow 0.15s ease;
+}
+div.stButton > button[kind="primary"]:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(156, 137, 184, 0.35);
+}
+</style>
+"""
+
+
+def _accent(section_id):
+    return SECTION_ACCENTS.get(section_id, DEFAULT_ACCENT)
+
+
+def _escape_html(s):
+    """Escape user/LLM text before embedding into our custom HTML cards."""
+    return html.escape(s, quote=False)
 
 
 # ---------------------------------------------------------------------------
@@ -65,32 +194,41 @@ def _fmt_protocol_cite(protocol_source):
 
 def main():
     st.set_page_config(page_title="PSN Generator", layout="wide")
-    st.title("Patient Safety Narrative Generator")
-    st.caption(
-        "Draft regulatory safety letter for a clinical trial subject. "
-        "Every generated sentence maps back to a source row in the ADAE Excel "
-        "or a section in the protocol PDF."
+    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+    st.markdown(
+        """
+        <div class="psn-header">
+            <h1>Patient Safety Narrative Generator</h1>
+            <p>Draft a regulatory safety letter for a clinical trial subject —
+            every sentence maps back to a source row in the ADAE Excel or a
+            section in the protocol PDF.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     # --- Inputs row ----------------------------------------------------------
     col_subj, col_adae, col_prot = st.columns([1, 1, 1])
 
     with col_subj:
-        st.subheader("Subject")
-        subject_id = st.text_input("Subject ID", value="SUBJ-1042")
+        st.markdown('<div class="psn-input-label">Subject</div>', unsafe_allow_html=True)
+        subject_id = st.text_input("Subject ID", value="SUBJ-1042", label_visibility="collapsed")
 
     with col_adae:
-        st.subheader("ADAE")
+        st.markdown('<div class="psn-input-label">ADAE Excel</div>', unsafe_allow_html=True)
         use_default_adae = st.checkbox("Use default synthetic ADAE", value=True)
         adae_upload = st.file_uploader(
-            "ADAE Excel (.xlsx)", type=["xlsx"], disabled=use_default_adae
+            "ADAE Excel (.xlsx)", type=["xlsx"],
+            disabled=use_default_adae, label_visibility="collapsed",
         )
 
     with col_prot:
-        st.subheader("Protocol")
+        st.markdown('<div class="psn-input-label">Protocol PDF</div>', unsafe_allow_html=True)
         use_default_prot = st.checkbox("Use default mock protocol", value=True)
         prot_upload = st.file_uploader(
-            "Protocol PDF", type=["pdf"], disabled=use_default_prot
+            "Protocol PDF", type=["pdf"],
+            disabled=use_default_prot, label_visibility="collapsed",
         )
 
     # --- Template viewer + generate ----------------------------------------
@@ -138,32 +276,55 @@ def main():
     if not narrative:
         return
 
-    st.divider()
-    st.subheader(
-        f"PSN — Subject {narrative['subject_id']}  "
-        f"·  {narrative['template']['name']} v{narrative['template']['version']}"
+    st.markdown(
+        f'<div class="psn-results-bar">PSN — Subject {narrative["subject_id"]} '
+        f'· {narrative["template"]["name"]} v{narrative["template"]["version"]}</div>',
+        unsafe_allow_html=True,
     )
 
     left, right = st.columns([6, 4])
 
     with left:
         for section in narrative["sections"]:
-            st.markdown(f"### {section['title']}")
-            st.write(section["text"])
+            accent = _accent(section["section_id"])
+            text_html = _escape_html(section["text"]).replace("\n", "<br>")
+            st.markdown(
+                f'''
+                <div class="psn-section" style="--psn-bar:{accent['bar']}; --psn-bg:{accent['bg']};">
+                    <h3>{section["title"]}</h3>
+                    <p>{text_html}</p>
+                </div>
+                ''',
+                unsafe_allow_html=True,
+            )
 
     with right:
-        st.markdown("#### Sources")
+        st.markdown(
+            '<div class="psn-input-label" style="margin-top:0.2rem;">Sources</div>',
+            unsafe_allow_html=True,
+        )
         for section in narrative["sections"]:
-            with st.container(border=True):
-                st.markdown(f"**{section['title']}**")
-                adae_cites = [_fmt_adae_cite(a) for a in section["sources"]["adae"]]
-                prot_cites = [_fmt_protocol_cite(p) for p in section["sources"]["protocol"]]
-                if adae_cites:
-                    st.markdown("• " + "  \n• ".join(adae_cites))
-                if prot_cites:
-                    st.markdown("• " + "  \n• ".join(prot_cites))
-                if not adae_cites and not prot_cites:
-                    st.markdown("_(no sources)_")
+            accent = _accent(section["section_id"])
+            adae_cites = [_fmt_adae_cite(a) for a in section["sources"]["adae"]]
+            prot_cites = [_fmt_protocol_cite(p) for p in section["sources"]["protocol"]]
+
+            items = adae_cites + prot_cites
+            if items:
+                body = "<ul>" + "".join(
+                    f"<li>{_escape_html(item)}</li>" for item in items
+                ) + "</ul>"
+            else:
+                body = '<div class="psn-source-empty">(no sources)</div>'
+
+            st.markdown(
+                f'''
+                <div class="psn-source" style="--psn-bar:{accent['bar']};">
+                    <div class="psn-source-title">{section["title"]}</div>
+                    {body}
+                </div>
+                ''',
+                unsafe_allow_html=True,
+            )
 
     # --- Downloads ----------------------------------------------------------
     st.divider()
