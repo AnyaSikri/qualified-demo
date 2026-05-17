@@ -84,33 +84,86 @@ CUSTOM_CSS = """
     line-height: 1.6;
 }
 
-/* Source card */
+/* Sources panel — the entire right column, visually distinct from narrative */
+.psn-sources-panel {
+    background: #2D3748;
+    border-radius: 14px;
+    padding: 1.2rem 1.1rem 0.6rem 1.1rem;
+    border: 1px solid #1F2937;
+    box-shadow: 0 4px 16px rgba(45, 55, 72, 0.18);
+}
+.psn-sources-panel-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 0.9rem;
+    padding-bottom: 0.7rem;
+    border-bottom: 1px solid #4A5568;
+}
+.psn-sources-panel-header .title {
+    color: #F7FAFC;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.psn-sources-panel-header .subtitle {
+    color: #A0AEC0;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+}
+
+/* Source card — dark, compact, monospaced citations */
 .psn-source {
     background: #FFFFFF;
-    border: 1px solid #E5DFEF;
-    border-left: 4px solid var(--psn-bar);
     border-radius: 8px;
-    padding: 0.85rem 1rem;
-    margin-bottom: 0.75rem;
-    font-size: 0.85rem;
+    border-left: 4px solid var(--psn-bar);
+    padding: 0.75rem 0.85rem;
+    margin-bottom: 0.65rem;
+    font-size: 0.82rem;
 }
 .psn-source .psn-source-title {
     font-weight: 600;
     color: #3D3D5C;
-    margin-bottom: 0.4rem;
-    font-size: 0.95rem;
+    margin-bottom: 0.55rem;
+    font-size: 0.88rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
-.psn-source ul {
-    margin: 0;
-    padding-left: 1.1rem;
-    color: #54546B;
+.psn-source .psn-cite {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    margin: 0.3rem 0;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.76rem;
+    color: #2D3748;
+    line-height: 1.4;
 }
-.psn-source li {
-    margin-bottom: 0.15rem;
+.psn-source .psn-chip {
+    flex: none;
+    display: inline-block;
+    padding: 0.08rem 0.42rem;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    line-height: 1.4;
+}
+.psn-source .psn-chip-adae {
+    background: #DCEBF7;
+    color: #2C5282;
+}
+.psn-source .psn-chip-protocol {
+    background: #E0EDDB;
+    color: #2F5233;
 }
 .psn-source .psn-source-empty {
     color: #9090A8;
     font-style: italic;
+    font-size: 0.78rem;
 }
 
 /* Section divider for results header */
@@ -299,32 +352,54 @@ def main():
             )
 
     with right:
-        st.markdown(
-            '<div class="psn-input-label" style="margin-top:0.2rem;">Sources</div>',
-            unsafe_allow_html=True,
-        )
+        cards_html = []
         for section in narrative["sections"]:
             accent = _accent(section["section_id"])
             adae_cites = [_fmt_adae_cite(a) for a in section["sources"]["adae"]]
             prot_cites = [_fmt_protocol_cite(p) for p in section["sources"]["protocol"]]
 
-            items = adae_cites + prot_cites
-            if items:
-                body = "<ul>" + "".join(
-                    f"<li>{_escape_html(item)}</li>" for item in items
-                ) + "</ul>"
-            else:
-                body = '<div class="psn-source-empty">(no sources)</div>'
+            cite_lines = []
+            for cite in adae_cites:
+                cite_lines.append(
+                    f'<div class="psn-cite">'
+                    f'<span class="psn-chip psn-chip-adae">ADAE</span>'
+                    f'<span>{_escape_html(cite.removeprefix("ADAE "))}</span>'
+                    f'</div>'
+                )
+            for cite in prot_cites:
+                cite_lines.append(
+                    f'<div class="psn-cite">'
+                    f'<span class="psn-chip psn-chip-protocol">PROTOCOL</span>'
+                    f'<span>{_escape_html(cite.removeprefix("Protocol "))}</span>'
+                    f'</div>'
+                )
+            if not cite_lines:
+                cite_lines.append('<div class="psn-source-empty">no citations</div>')
 
-            st.markdown(
-                f'''
-                <div class="psn-source" style="--psn-bar:{accent['bar']};">
-                    <div class="psn-source-title">{section["title"]}</div>
-                    {body}
-                </div>
-                ''',
-                unsafe_allow_html=True,
+            cards_html.append(
+                f'<div class="psn-source" style="--psn-bar:{accent["bar"]};">'
+                f'<div class="psn-source-title">{_escape_html(section["title"])}</div>'
+                f'{"".join(cite_lines)}'
+                f'</div>'
             )
+
+        n_sections = len(narrative["sections"])
+        total_adae = sum(len(s["sources"]["adae"]) for s in narrative["sections"])
+        total_prot = sum(len(s["sources"]["protocol"]) for s in narrative["sections"])
+
+        st.markdown(
+            f'''
+            <div class="psn-sources-panel">
+                <div class="psn-sources-panel-header">
+                    <span class="title">Source Trail</span>
+                    <span class="subtitle">{n_sections} sections &middot;
+                        {total_adae} ADAE &middot; {total_prot} protocol</span>
+                </div>
+                {"".join(cards_html)}
+            </div>
+            ''',
+            unsafe_allow_html=True,
+        )
 
     # --- Downloads ----------------------------------------------------------
     st.divider()
