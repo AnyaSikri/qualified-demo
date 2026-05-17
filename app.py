@@ -65,23 +65,95 @@ CUSTOM_CSS = """
     margin-bottom: 0.4rem;
 }
 
-/* Narrative section card */
-.psn-section {
-    background: var(--psn-bg);
-    border-left: 4px solid var(--psn-bar);
-    padding: 1rem 1.2rem;
-    border-radius: 8px;
-    margin-bottom: 1rem;
+/* Narrative — styled as a single "letter on paper", not a card list */
+.psn-document {
+    background: #FFFFFF;
+    border-radius: 14px;
+    border: 1px solid #E5DFEF;
+    box-shadow: 0 4px 16px rgba(45, 55, 72, 0.10);
+    padding: 2rem 2.2rem 1.5rem 2.2rem;
 }
-.psn-section h3 {
-    margin: 0 0 0.5rem 0;
-    color: #3D3D5C;
-    font-size: 1.1rem;
+.psn-doc-header {
+    border-bottom: 2px solid #EDE7F6;
+    padding-bottom: 1rem;
+    margin-bottom: 1.4rem;
 }
-.psn-section p {
-    margin: 0;
+.psn-doc-eyebrow {
+    color: #9C89B8;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 0.35rem;
+}
+.psn-doc-title {
     color: #2D3748;
-    line-height: 1.6;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.55rem;
+    font-weight: 600;
+    margin: 0;
+    line-height: 1.25;
+}
+.psn-doc-meta {
+    color: #6B6B85;
+    font-size: 0.85rem;
+    margin-top: 0.45rem;
+}
+.psn-doc-meta strong {
+    color: #3D3D5C;
+}
+.psn-doc-section {
+    padding: 0.9rem 0 1.1rem 0;
+    border-bottom: 1px dashed #EDE7F6;
+}
+.psn-doc-section:last-of-type {
+    border-bottom: none;
+    padding-bottom: 0.2rem;
+}
+.psn-doc-section-head {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin-bottom: 0.55rem;
+}
+.psn-doc-badge {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--psn-bar);
+    color: #FFFFFF;
+    font-weight: 700;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+.psn-doc-section-title {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #2D3748;
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 0;
+}
+.psn-doc-section-body {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #2D3748;
+    font-size: 1.0rem;
+    line-height: 1.7;
+    margin: 0;
+    padding-left: 0.1rem;
+}
+.psn-doc-footer {
+    margin-top: 1.4rem;
+    padding-top: 0.9rem;
+    border-top: 2px solid #EDE7F6;
+    color: #9090A8;
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    text-align: center;
 }
 
 /* Sources panel — the entire right column, visually distinct from narrative */
@@ -164,17 +236,6 @@ CUSTOM_CSS = """
     color: #9090A8;
     font-style: italic;
     font-size: 0.78rem;
-}
-
-/* Section divider for results header */
-.psn-results-bar {
-    background: #F4EFFB;
-    padding: 0.7rem 1rem;
-    border-radius: 8px;
-    border-left: 4px solid #9C89B8;
-    color: #3D3D5C;
-    font-weight: 600;
-    margin: 1rem 0;
 }
 
 /* Tighten the default primary button */
@@ -329,27 +390,45 @@ def main():
     if not narrative:
         return
 
-    st.markdown(
-        f'<div class="psn-results-bar">PSN — Subject {narrative["subject_id"]} '
-        f'· {narrative["template"]["name"]} v{narrative["template"]["version"]}</div>',
-        unsafe_allow_html=True,
-    )
-
+    st.write("")  # vertical breathing room before the two-column layout
     left, right = st.columns([6, 4])
 
     with left:
-        for section in narrative["sections"]:
+        section_blocks = []
+        for idx, section in enumerate(narrative["sections"], start=1):
             accent = _accent(section["section_id"])
             text_html = _escape_html(section["text"]).replace("\n", "<br>")
-            st.markdown(
+            section_blocks.append(
                 f'''
-                <div class="psn-section" style="--psn-bar:{accent['bar']}; --psn-bg:{accent['bg']};">
-                    <h3>{section["title"]}</h3>
-                    <p>{text_html}</p>
+                <div class="psn-doc-section">
+                    <div class="psn-doc-section-head">
+                        <div class="psn-doc-badge" style="--psn-bar:{accent['bar']};">{idx}</div>
+                        <div class="psn-doc-section-title">{_escape_html(section['title'])}</div>
+                    </div>
+                    <p class="psn-doc-section-body">{text_html}</p>
                 </div>
-                ''',
-                unsafe_allow_html=True,
+                '''
             )
+
+        st.markdown(
+            f'''
+            <div class="psn-document">
+                <div class="psn-doc-header">
+                    <div class="psn-doc-eyebrow">Patient Safety Narrative &middot; Draft</div>
+                    <h2 class="psn-doc-title">Subject {_escape_html(narrative["subject_id"])}</h2>
+                    <div class="psn-doc-meta">
+                        Template: <strong>{_escape_html(narrative["template"]["name"])}</strong>
+                        v{_escape_html(narrative["template"]["version"])}
+                    </div>
+                </div>
+                {"".join(section_blocks)}
+                <div class="psn-doc-footer">
+                    Draft &mdash; for investigator review, not for distribution
+                </div>
+            </div>
+            ''',
+            unsafe_allow_html=True,
+        )
 
     with right:
         cards_html = []
