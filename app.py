@@ -12,6 +12,7 @@ import io
 import json
 import os
 import tempfile
+import textwrap
 
 import streamlit as st
 
@@ -266,6 +267,16 @@ def _escape_html(s):
     return html.escape(s, quote=False)
 
 
+def _md_html(markup):
+    """Render raw HTML through st.markdown.
+
+    Streamlit's markdown parser treats lines indented 4+ spaces as code
+    blocks, so we MUST dedent before passing through. The strip removes
+    leading/trailing newlines that would otherwise also confuse the parser.
+    """
+    st.markdown(textwrap.dedent(markup).strip(), unsafe_allow_html=True)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -310,17 +321,14 @@ def main():
     st.set_page_config(page_title="PSN Generator", layout="wide")
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-    st.markdown(
-        """
+    _md_html("""
         <div class="psn-header">
             <h1>Patient Safety Narrative Generator</h1>
             <p>Draft a regulatory safety letter for a clinical trial subject —
             every sentence maps back to a source row in the ADAE Excel or a
             section in the protocol PDF.</p>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """)
 
     # --- Inputs row ----------------------------------------------------------
     col_subj, col_adae, col_prot = st.columns([1, 1, 1])
@@ -410,8 +418,7 @@ def main():
                 '''
             )
 
-        st.markdown(
-            f'''
+        _md_html(f"""
             <div class="psn-document">
                 <div class="psn-doc-header">
                     <div class="psn-doc-eyebrow">Patient Safety Narrative &middot; Draft</div>
@@ -426,9 +433,7 @@ def main():
                     Draft &mdash; for investigator review, not for distribution
                 </div>
             </div>
-            ''',
-            unsafe_allow_html=True,
-        )
+        """)
 
     with right:
         cards_html = []
@@ -466,8 +471,7 @@ def main():
         total_adae = sum(len(s["sources"]["adae"]) for s in narrative["sections"])
         total_prot = sum(len(s["sources"]["protocol"]) for s in narrative["sections"])
 
-        st.markdown(
-            f'''
+        _md_html(f"""
             <div class="psn-sources-panel">
                 <div class="psn-sources-panel-header">
                     <span class="title">Source Trail</span>
@@ -476,9 +480,7 @@ def main():
                 </div>
                 {"".join(cards_html)}
             </div>
-            ''',
-            unsafe_allow_html=True,
-        )
+        """)
 
     # --- Downloads ----------------------------------------------------------
     st.divider()
