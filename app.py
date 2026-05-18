@@ -406,16 +406,17 @@ def main():
         for idx, section in enumerate(narrative["sections"], start=1):
             accent = _accent(section["section_id"])
             text_html = _escape_html(section["text"]).replace("\n", "<br>")
+            # Built as a single line: any blank line inside the joined output
+            # would terminate the outer document's HTML block in markdown,
+            # leaking the literal markup of subsequent sections.
             section_blocks.append(
-                f'''
-                <div class="psn-doc-section">
-                    <div class="psn-doc-section-head">
-                        <div class="psn-doc-badge" style="--psn-bar:{accent['bar']};">{idx}</div>
-                        <div class="psn-doc-section-title">{_escape_html(section['title'])}</div>
-                    </div>
-                    <p class="psn-doc-section-body">{text_html}</p>
-                </div>
-                '''
+                f'<div class="psn-doc-section">'
+                f'<div class="psn-doc-section-head">'
+                f'<div class="psn-doc-badge" style="--psn-bar:{accent["bar"]};">{idx}</div>'
+                f'<div class="psn-doc-section-title">{_escape_html(section["title"])}</div>'
+                f'</div>'
+                f'<p class="psn-doc-section-body">{text_html}</p>'
+                f'</div>'
             )
 
         _md_html(f"""
