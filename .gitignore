@@ -10,8 +10,11 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
-# Generated data
-data/
+# Synthetic inputs (data/ADAE.xlsx, data/mock_protocol.pdf) ARE committed so
+# the deployed app works without a setup step. Generated per-subject outputs
+# are not — they're produced on demand.
+data/narrative_*
+data/sources_*
 
 # OS
 .DS_Store

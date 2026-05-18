@@ -55,11 +55,12 @@ The `sources` block is **built from the retrieval inputs, not from model output*
 ```bash
 pip install -r requirements.txt
 cp .env.example .env          # then put your OPENAI_API_KEY in it
-python build_synthetic_data.py
 streamlit run app.py
 ```
 
-Or end-to-end from the CLI:
+The synthetic ADAE and mock protocol are committed to `data/`, so no setup step is needed. To regenerate them: `python build_synthetic_data.py`.
+
+End-to-end from the CLI:
 
 ```bash
 python generator.py SUBJ-1042
@@ -67,6 +68,17 @@ python docx_builder.py SUBJ-1042   # builds narrative.docx + sources.json
 ```
 
 Try `SUBJ-0817` to see the gap-flagging demo — that subject has intentionally missing CMDOSE/CMSTDTC fields, and the output writes "not reported" while the citation list omits those columns.
+
+## Deploy on Streamlit Cloud
+
+1. Push this repo to GitHub.
+2. Go to [share.streamlit.io](https://share.streamlit.io), click **New app**, and point it at this repo (`app.py`, branch `main`).
+3. In the app's **Settings → Secrets**, paste:
+   ```toml
+   OPENAI_API_KEY = "sk-..."
+   ```
+   The same key the local `.env` uses. Streamlit Cloud exposes this as an env var at runtime, which `python-dotenv` picks up via `os.getenv` — no code changes needed.
+4. Deploy. The synthetic data ships with the repo, so the app generates a narrative immediately.
 
 ---
 
