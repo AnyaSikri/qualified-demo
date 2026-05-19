@@ -14,8 +14,11 @@ import os
 import tempfile
 import textwrap
 
+import fitz  # PyMuPDF
+import pandas as pd
 import streamlit as st
 
+from data_retrieval.protocol import parse_sections
 from docx_builder import build_narrative_docx, build_sources_json
 from generator import generate_narrative
 from template import NARRATIVE_TEMPLATE
@@ -262,6 +265,71 @@ def _accent(section_id):
     return SECTION_ACCENTS.get(section_id, DEFAULT_ACCENT)
 
 
+# Loaders for the preview panels. Cached so reruns don't re-parse the
+# same file each interaction. Cache keys are file path (defaults) or
+# raw bytes (uploads) so each unique input only pays the load once.
+
+@st.cache_data(show_spinner=False)
+def _load_adae_from_path(path):
+    return pd.read_excel(path)
+
+
+@st.cache_data(show_spinner=False)
+def _load_adae_from_bytes(data):
+    return pd.read_excel(io.BytesIO(data))
+
+
+@st.cache_data(show_spinner=False)
+def _load_protocol_pages_from_path(path):
+    """Return (per-page text, parsed sections) for an on-disk PDF."""
+    doc = fitz.open(path)
+    pages = [page.get_text() for page in doc]
+    doc.close()
+    return pages, parse_sections(pages)
+
+
+@st.cache_data(show_spinner=False)
+def _load_protocol_pages_from_bytes(data):
+    doc = fitz.open(stream=data, filetype="pdf")
+    pages = [page.get_text() for page in doc]
+    doc.close()
+    return pages, parse_sections(pages)
+
+
+@st.cache_data(show_spinner=False)
+def _render_protocol_page_png(source, page_idx, dpi=120):
+    """Render one PDF page as PNG bytes. `source` is either a filesystem
+    path (str) or raw PDF bytes — both hash cleanly for the cache."""
+    if isinstance(source, bytes):
+        doc = fitz.open(stream=source, filetype="pdf")
+    else:
+        doc = fitz.open(source)
+    pix = doc[page_idx].get_pixmap(dpi=dpi)
+    png = pix.tobytes("png")
+    doc.close()
+    return png
+
+
+def _resolve_preview_inputs(use_default_adae, adae_upload,
+                            use_default_prot, prot_upload):
+    """Return what each preview panel should show, or None if not available
+    yet. Each value is either a (kind, payload) tuple where kind is 'path'
+    or 'bytes'."""
+    adae = None
+    if use_default_adae and os.path.exists(DEFAULT_ADAE):
+        adae = ("path", DEFAULT_ADAE)
+    elif adae_upload is not None:
+        adae = ("bytes", adae_upload.getvalue())
+
+    prot = None
+    if use_default_prot and os.path.exists(DEFAULT_PROTOCOL):
+        prot = ("path", DEFAULT_PROTOCOL)
+    elif prot_upload is not None:
+        prot = ("bytes", prot_upload.getvalue())
+
+    return adae, prot
+
+
 def _escape_html(s):
     """Escape user/LLM text before embedding into our custom HTML cards."""
     return html.escape(s, quote=False)
@@ -352,6 +420,81 @@ def main():
             "Protocol PDF", type=["pdf"],
             disabled=use_default_prot, label_visibility="collapsed",
         )
+
+    # --- Input previews -----------------------------------------------------
+    adae_input, prot_input = _resolve_preview_inputs(
+        use_default_adae, adae_upload, use_default_prot, prot_upload
+    )
+
+    if adae_input is not None:
+        kind, payload = adae_input
+        df_preview = (
+            _load_adae_from_path(payload) if kind == "path"
+            else _load_adae_from_bytes(payload)
+        )
+        n_match = int((df_preview["USUBJID"] == subject_id.strip()).sum()) \
+            if "USUBJID" in df_preview.columns else 0
+        match_note = (
+            f"&nbsp;·&nbsp; **{n_match}** row(s) match `{subject_id.strip()}`"
+            if n_match else
+            f"&nbsp;·&nbsp; no rows match `{subject_id.strip()}`"
+        )
+        with st.expander(
+            f"Preview ADAE — {len(df_preview)} rows · "
+            f"{df_preview['USUBJID'].nunique()} subjects",
+            expanded=False,
+        ):
+            st.markdown(
+                f"<div style='color:#6B6B85; font-size:0.85rem; margin-bottom:0.5rem;'>"
+                f"Source: {'default synthetic file' if kind == 'path' else 'uploaded file'}"
+                f"{match_note}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.dataframe(df_preview, use_container_width=True, hide_index=False)
+
+    if prot_input is not None:
+        kind, payload = prot_input
+        pages, parsed = (
+            _load_protocol_pages_from_path(payload) if kind == "path"
+            else _load_protocol_pages_from_bytes(payload)
+        )
+        with st.expander(
+            f"Preview protocol PDF — {len(pages)} pages · "
+            f"{len(parsed)} parsed sections",
+            expanded=False,
+        ):
+            st.markdown(
+                f"<div style='color:#6B6B85; font-size:0.85rem; margin-bottom:0.6rem;'>"
+                f"Source: {'default mock protocol' if kind == 'path' else 'uploaded file'}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            toc_col, page_col = st.columns([1, 1])
+
+            with toc_col:
+                st.markdown("**Parsed section index**")
+                toc_lines = []
+                for sec in parsed:
+                    pages_label = ",".join(str(p) for p in sec["pages"])
+                    toc_lines.append(
+                        f"- §{sec['number']}. {sec['title']} &nbsp; "
+                        f"<span style='color:#9C89B8; font-size:0.8rem;'>p.{pages_label}</span>"
+                    )
+                st.markdown("\n".join(toc_lines), unsafe_allow_html=True)
+                st.caption(
+                    "Detected by regex on numbered headers — same parsing "
+                    "that powers the section retrieval for narrative generation."
+                )
+
+            with page_col:
+                page_num = st.selectbox(
+                    "Render page", options=list(range(1, len(pages) + 1)),
+                    index=0, key="protocol_page_picker",
+                )
+                png = _render_protocol_page_png(payload, page_num - 1)
+                st.image(png, use_container_width=True)
 
     # --- Template viewer + generate ----------------------------------------
     with st.expander(
