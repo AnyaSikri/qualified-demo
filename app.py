@@ -494,7 +494,7 @@ def main():
                     index=0, key="protocol_page_picker",
                 )
                 png = _render_protocol_page_png(payload, page_num - 1)
-                st.image(png, use_column_width=True)
+                st.image(png, use_container_width=True)
 
     # --- Template viewer + generate ----------------------------------------
     with st.expander(
