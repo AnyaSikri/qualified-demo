@@ -1,14 +1,19 @@
 """Orchestration — loops template sections, calls retrieval + LLM, returns
 the full structured narrative.
 
-This is the single seam the Streamlit UI and CLI both talk to. Status messages
-are printed via the `log` callback so the UI can stream them as it would
-"live tool calls."
+This is the single seam the Streamlit UI and CLI both talk to. Retrieval is
+sequential (fast, pure pandas/PDF). The 4 GPT-4o calls fan out in parallel —
+each section's prompt is independent of every other section, so we wait
+roughly max(individual call) instead of sum.
 """
 
 import json
 import os
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from openai import OpenAI
 
 from data_retrieval import adae as adae_mod
 from data_retrieval import protocol as protocol_mod
@@ -50,25 +55,46 @@ def generate_narrative(subject_id, adae_path, protocol_path, template, log=None)
         raise ValueError(f"No ADAE rows found for subject {subject_id!r}")
     log(f"         {len(events)} event row(s) for this subject")
 
-    sections_out = []
+    # --- Retrieval (sequential, fast) -------------------------------------
+    contexts = []
     for section_config in template["sections"]:
-        sid = section_config["id"]
-        log(f"[section: {sid}]")
-
         adae_context = adae_mod.get_fields_for_section(events, section_config)
-        rows = [rec["row"] for rec in adae_context]
-        log(f"  retrieve ADAE rows={rows} fields={section_config['adae_fields']}")
-
         protocol_context = protocol_mod.get_sections_for(
             parsed_sections, section_config["protocol_sections"]
         )
-        prot_labels = [f"§{p['number']} {p['title']} p.{p['pages']}" for p in protocol_context]
-        log(f"  retrieve protocol -> {prot_labels or '(none)'}")
+        rows = [rec["row"] for rec in adae_context]
+        prot_labels = [f"§{p['number']} {p['title']} p.{p['pages']}"
+                       for p in protocol_context]
+        log(f"[retrieve {section_config['id']}] "
+            f"ADAE rows={rows}; protocol={prot_labels or '(none)'}")
+        contexts.append((section_config, adae_context, protocol_context))
 
-        log(f"  → GPT-4o synth...")
-        result = generate_section(section_config, adae_context, protocol_context)
-        log(f"  ✓ {len(result['text'])} chars")
-        sections_out.append(result)
+    # --- Synthesis (parallel) ---------------------------------------------
+    client = OpenAI()  # shared across all 4 calls
+    n = len(contexts)
+    log(f"[synth] firing {n} GPT-4o calls in parallel...")
+    t0 = time.perf_counter()
+
+    results_by_id = {}
+    with ThreadPoolExecutor(max_workers=n) as pool:
+        futures = {
+            pool.submit(
+                generate_section, section_config, adae_ctx, prot_ctx, client
+            ): section_config["id"]
+            for section_config, adae_ctx, prot_ctx in contexts
+        }
+        for future in as_completed(futures):
+            sid = futures[future]
+            t_section = time.perf_counter() - t0
+            result = future.result()
+            results_by_id[sid] = result
+            log(f"  ✓ {sid}  ({len(result['text'])} chars, t+{t_section:.1f}s)")
+
+    elapsed = time.perf_counter() - t0
+    log(f"[synth] all {n} sections done in {elapsed:.1f}s wall-clock")
+
+    # Reorder results to template section order.
+    sections_out = [results_by_id[s["id"]] for s in template["sections"]]
 
     return {
         "subject_id": subject_id,
